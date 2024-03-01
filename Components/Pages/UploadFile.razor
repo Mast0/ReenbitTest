@@ -1,0 +1,73 @@
+﻿@page "/"
+@inject BlobServiceClient blobClient
+
+
+@if (Message.Length > 0)
+{
+    <p class="alert alert-secondary" role="alert">@Message</p>
+}
+@if (UploadForm == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <div class="align-content-center form-control">
+        <EditForm Model="@UploadForm" OnValidSubmit="@UploadSubmit" FormName="UploadFile" method="post" class="was-validated" enctype="multipart/form-data">
+            <div class="mb-3">
+                <label for="emailInput" class="form-label">
+                    Email address
+                </label>
+                <InputText class="form-control" placeholder="Email to send the file" @bind-Value="@UploadForm.Email" id="emailInput" />
+            </div>
+            <div class="input-group mb-3">
+                <InputFile class="form-control" accept=".docx" id="uploadFile" name="UploadForm.Attachments" multiple></InputFile>
+                <label class="input-group-text" for="uploadFile">
+                    Upload
+                </label>
+            </div>
+            <button type="submit" class="btn btn-primary">Submit</button>
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+        </EditForm>
+    </div>
+}
+
+
+@code {
+    [SupplyParameterFromForm(FormName = "UploadFile")]
+    private UploadFileForm? UploadForm { get; set; } = new();
+    private string Message { get; set; } = String.Empty;
+    private long maxFileSize = 5120000;
+
+    private async Task UploadSubmit()
+    {
+        try
+        {
+            IDictionary<string, string> metadata = new Dictionary<string, string>();
+
+            metadata.Add("email", UploadForm.Email);
+
+            foreach (var file in UploadForm.Attachments)
+            {
+                string safeFileName = WebUtility.HtmlEncode(file.FileName);
+
+                //upload file to blob storage
+                var rand = new Random().Next(10000);
+                var docsContainer = blobClient.GetBlobContainerClient("reenbit-docs");
+                await docsContainer.UploadBlobAsync(
+                    $"{rand}_{safeFileName}",
+                    file.OpenReadStream()
+                );
+                BlobClient blob = docsContainer.GetBlobClient($"{rand}_{safeFileName}");
+                await blob.UploadAsync(file.OpenReadStream(), new BlobUploadOptions { Metadata = metadata });
+            }
+            UploadForm = new();
+            Message = "File uploaded";
+        }
+        catch (Exception e)
+        {
+            Message = "Error: " + e.Message;
+        }
+    }
+}
